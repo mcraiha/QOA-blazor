@@ -1,0 +1,122 @@
+﻿@page "/"
+@inject ILogger<Home> Logger
+<hr />
+
+<section>
+    <header>
+        <h2>Encode</h2>
+        <p>Encode audio files to QOA format (<a href="https://en.wikipedia.org/wiki/Lossy_compression">lossy operation</a>)</p>
+    </header>
+    <InputFile OnChange="LoadAudioFiles" multiple accept=".wav" />
+    @if (encodedAudios.Count > 0)
+    {
+        <table>
+            <thead>
+                <th>Filename</th>
+                <th>Specs</th>
+                <th>Download</th>
+            </thead>
+            <tbody>
+            @foreach ((string filename, string specs, string audiodata) in encodedAudios)
+            {
+                <tr>
+                <td>@filename</td>
+                <td>@specs</td>
+                <td><a href="@audiodata" download="@($"{filename}.qoa")">@($"{filename}.qoa")</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</section>
+
+<hr />
+
+<section>
+    <header>
+        <h2>Decode</h2>
+        <p>Decode QOA files to WAV format</p>
+    </header>
+    <InputFile OnChange="LoadQOAFiles" multiple accept=".qoa" />
+    @if (decodedAudios.Count > 0)
+    {
+        <table>
+            <thead>
+                <th>Filename</th>
+                <th>Specs</th>
+                <th>Player</th>
+            </thead>
+            <tbody>
+            @foreach ((string filename, string specs, string audiodata) in decodedAudios)
+            {
+                <tr>
+                <td>@filename</td>
+                <td>@specs</td>
+                <td><audio controls src="@audiodata" /></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</section>
+
+@code {
+
+    private int maxAllowedFiles = 10;
+    private long maxAllowedSize = 32_000_000;
+
+    private readonly List<(string filename, string specs, string audiodata)> encodedAudios = new List<(string filename, string specs, string audiodata)>();
+
+    private readonly List<(string filename, string specs, string audiodata)> decodedAudios = new List<(string filename, string specs, string audiodata)>();
+
+    // Encode .wav files into .qoa
+    private async Task LoadAudioFiles(InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(maxAllowedFiles))
+        {
+            try
+            {
+                QOA qoa = new QOA();
+                MemoryStream wavStream = new MemoryStream();
+                MemoryStream qoaStream = new MemoryStream();
+                await file.OpenReadStream(maxAllowedSize).CopyToAsync(wavStream);
+                wavStream.Seek(0, SeekOrigin.Begin);
+                qoa.EncodeWAVToQOA(wavStream, qoaStream);
+
+                qoaStream.Seek(0, SeekOrigin.Begin);
+                string specs = qoa.DecodeHeaderToText(qoaStream);
+                qoaStream.Seek(0, SeekOrigin.Begin);
+
+                encodedAudios.Add((file.Name, specs, $"data:application/octet-stream;base64,{Convert.ToBase64String(qoaStream.ToArray())}"));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("File: {FileName} Error: {Error}", file.Name, ex.Message);
+            }
+        }
+    }
+
+    // Decode .qoa files into .wav
+    private async Task LoadQOAFiles(InputFileChangeEventArgs e)
+    {
+        foreach (var file in e.GetMultipleFiles(maxAllowedFiles))
+        {
+            try
+            {
+                QOA qoa = new QOA();
+                MemoryStream wavStream = new MemoryStream();
+                MemoryStream qoaStream = new MemoryStream();
+                await file.OpenReadStream(maxAllowedSize).CopyToAsync(qoaStream);
+                qoaStream.Seek(0, SeekOrigin.Begin);
+                qoa.DecodeToWav(qoaStream, wavStream);
+                qoaStream.Seek(0, SeekOrigin.Begin);
+
+                decodedAudios.Add((file.Name, qoa.DecodeHeaderToText(qoaStream), $"data:audio/wav;base64,{Convert.ToBase64String(wavStream.ToArray())}"));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("File: {FileName} Error: {Error}", file.Name, ex.Message);
+            }
+        }
+    }
+}
