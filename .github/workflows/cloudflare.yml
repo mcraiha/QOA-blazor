@@ -1,0 +1,42 @@
+# This workflow will do publish and upload files to CloudFlare
+
+name: .NET publish Cloudflare
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
+    - name: Install wasm-tools
+      run: dotnet workload install wasm-tools
+    - name: Add build info
+      run: |
+        current_date=$(date --iso-8601=minutes)
+        git_short_hash=$(git rev-parse --short HEAD)
+        echo $current_date
+        echo $git_short_hash
+        sed -i "s/{0}/$current_date/g" src/wwwroot/index.html
+        sed -i "s/{1}/$git_short_hash/g" src/wwwroot/index.html
+    - name: Publish release
+      run: dotnet publish src/qoablazor.csproj -c Release
+    - name: Remove .wasm files
+      run: rm src/bin/Release/net9.0/publish/wwwroot/_framework/*.wasm
+    - name: Remove .gz files
+      run: rm src/bin/Release/net9.0/publish/wwwroot/_framework/*.gz
+    - name: Upload to pages
+      uses: cloudflare/wrangler-action@2.0.0
+      with:
+        apiToken: ${{ secrets.CF_API_TOKEN }}
+        accountId: ${{ secrets.CF_ACCOUNT_ID }}
+        command: pages publish src/bin/Release/net9.0/publish/wwwroot --project-name=qoa-blazor
+    
